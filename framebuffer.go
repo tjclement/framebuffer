@@ -14,10 +14,10 @@ import (
 // Framebuffer contains information about framebuffer.
 type Framebuffer struct {
 	dev      *os.File
-	finfo    fixedScreenInfo
-	vinfo    variableScreenInfo
-	data     []byte
-	restData []byte
+	Finfo    fixedScreenInfo
+	Vinfo    variableScreenInfo
+	Data     []uint8
+	restData []uint8
 }
 
 // Init opens framebuffer device, maps it to memory and saves its current contents.
@@ -32,27 +32,27 @@ func Init(dev string) (*Framebuffer, error) {
 		return nil, err
 	}
 
-	err = ioctl(fb.dev.Fd(), getFixedScreenInfo, unsafe.Pointer(&fb.finfo))
+	err = ioctl(fb.dev.Fd(), getFixedScreenInfo, unsafe.Pointer(&fb.Finfo))
 	if err != nil {
 		fb.dev.Close()
 		return nil, err
 	}
 
-	err = ioctl(fb.dev.Fd(), getVariableScreenInfo, unsafe.Pointer(&fb.vinfo))
+	err = ioctl(fb.dev.Fd(), getVariableScreenInfo, unsafe.Pointer(&fb.Vinfo))
 	if err != nil {
 		fb.dev.Close()
 		return nil, err
 	}
 
-	fb.data, err = syscall.Mmap(int(fb.dev.Fd()), 0, int(fb.finfo.Smem_len+uint32(fb.finfo.Smem_start&uint64(syscall.Getpagesize()-1))), protocolRead|protocolWrite, mapShared)
+	fb.Data, err = syscall.Mmap(int(fb.dev.Fd()), 0, int(fb.Finfo.Smem_len+uint32(fb.Finfo.Smem_start&uint64(syscall.Getpagesize()-1))), protocolRead|protocolWrite, mapShared)
 	if err != nil {
 		fb.dev.Close()
 		return nil, err
 	}
 
-	fb.restData = make([]byte, len(fb.data))
-	for i := range fb.data {
-		fb.restData[i] = fb.data[i]
+	fb.restData = make([]byte, len(fb.Data))
+	for i := range fb.Data {
+		fb.restData[i] = fb.Data[i]
 	}
 
 	return fb, nil
@@ -61,23 +61,23 @@ func Init(dev string) (*Framebuffer, error) {
 // Close closes framebuffer device and restores its contents.
 func (fb *Framebuffer) Close() {
 	for i := range fb.restData {
-		fb.data[i] = fb.restData[i]
+		fb.Data[i] = fb.restData[i]
 	}
-	syscall.Munmap(fb.data)
+	syscall.Munmap(fb.Data)
 	fb.dev.Close()
 }
 
 // WritePixel changes pixel at x, y to specified color.
-func (fb *Framebuffer) WritePixel(x, y, red, green, blue, alpha int) {
-	offset := (int(fb.vinfo.Xoffset)+x)*(int(fb.vinfo.Bits_per_pixel)/8) + (int(fb.vinfo.Yoffset)+y)*int(fb.finfo.Line_length)
-	fb.data[offset] = byte(blue)
-	fb.data[offset+1] = byte(green)
-	fb.data[offset+2] = byte(red)
-	fb.data[offset+3] = byte(alpha)
+func (fb *Framebuffer) WritePixel(x, y int, red, green, blue, alpha  uint8) {
+	offset := (int(fb.Vinfo.Xoffset)+x)*(int(fb.Vinfo.Bits_per_pixel)/8) + (int(fb.Vinfo.Yoffset)+y)*int(fb.Finfo.Line_length)
+	fb.Data[offset] = blue
+	fb.Data[offset+1] = green
+	fb.Data[offset+2] = red
+	fb.Data[offset+3] = alpha
 }
 
 // Clear fills screen with specified color
-func (fb *Framebuffer) Clear(red, green, blue, alpha int) {
+func (fb *Framebuffer) Clear(red, green, blue, alpha uint8) {
 	w, h := fb.Size()
 	for i := 0; i < w; i++ {
 		for j := 0; j < h; j++ {
@@ -88,7 +88,7 @@ func (fb *Framebuffer) Clear(red, green, blue, alpha int) {
 
 // Size returns dimensions of a framebuffer.
 func (fb *Framebuffer) Size() (width, height int) {
-	return int(fb.vinfo.Xres), int(fb.vinfo.Yres)
+	return int(fb.Vinfo.Xres), int(fb.Vinfo.Yres)
 }
 
 func ioctl(fd uintptr, cmd uintptr, data unsafe.Pointer) error {
